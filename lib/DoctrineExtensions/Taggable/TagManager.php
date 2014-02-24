@@ -12,7 +12,7 @@ namespace DoctrineExtensions\Taggable;
 
 use Doctrine\ORM\EntityManager;
 use Doctrine\ORM\Query\Expr;
-use Doctrine\Commons\Collections\Collection;
+use Doctrine\Common\Collections\ArrayCollection;
 use DoctrineExtensions\Taggable\Entity\Tag;
 use DoctrineExtensions\Taggable\Entity\Tagging;
 
@@ -36,56 +36,6 @@ class TagManager
     }
 
     /**
-     * Adds a tag on the given taggable resource
-     *
-     * @param Tag       $tag        Tag object
-     * @param Taggable  $resource   Taggable resource
-     */
-    public function addTag(Tag $tag, Taggable $resource)
-    {
-        $resource->getTags()->add($tag);
-    }
-
-    /**
-     * Adds multiple tags on the given taggable resource
-     *
-     * @param Tag[]     $tags       Array of Tag objects
-     * @param Taggable  $resource   Taggable resource
-     */
-    public function addTags(array $tags, Taggable $resource)
-    {
-        foreach ($tags as $tag) {
-            if ($tag instanceof Tag) {
-                $this->addTag($tag, $resource);
-            }
-        }
-    }
-
-    /**
-     * Removes an existant tag on the given taggable resource
-     *
-     * @param Tag       $tag        Tag object
-     * @param Taggable  $resource   Taggable resource
-     * @return Boolean
-     */
-    public function removeTag(Tag $tag, Taggable $resource)
-    {
-        return $resource->getTags()->removeElement($tag);
-    }
-
-    /**
-     * Replaces all current tags on the given taggable resource
-     *
-     * @param Tag[]     $tags       Array of Tag objects
-     * @param Taggable  $resource   Taggable resource
-     */
-    public function replaceTags(array $tags, Taggable $resource)
-    {
-        $resource->getTags()->clear();
-        $this->addTags($tags, $resource);
-    }
-
-    /**
      * Loads or creates a tag from tag name
      *
      * @param array  $name  Tag name
@@ -101,12 +51,12 @@ class TagManager
      * Loads or creates multiples tags from a list of tag names
      *
      * @param array  $names   Array of tag names
-     * @return Tag[]
+     * @return ArrayCollection
      */
     public function loadOrCreateTags(array $names)
     {
         if (empty($names)) {
-            return array();
+            return new ArrayCollection();
         }
 
         $names = array_unique($names);
@@ -137,10 +87,10 @@ class TagManager
                 $tags[] = $tag;
             }
 
-            $this->em->flush();
+            $this->em->flush($tags);
         }
 
-        return $tags;
+        return new ArrayCollection($tags);
     }
 
     /**
@@ -151,8 +101,9 @@ class TagManager
     public function saveTagging(Taggable $resource)
     {
         $oldTags = $this->getTagging($resource);
-        $newTags = $resource->getTags();
+        $newTags = clone $resource->getTags();
         $tagsToAdd = $newTags;
+        $changes = false;
 
         if ($oldTags !== null and is_array($oldTags) and !empty($oldTags)) {
             $tagsToRemove = array();
@@ -168,6 +119,7 @@ class TagManager
             }
 
             if (sizeof($tagsToRemove)) {
+                $changes = true;
                 $builder = $this->em->createQueryBuilder();
                 $builder
                     ->delete($this->taggingClass, 't')
@@ -183,14 +135,22 @@ class TagManager
             }
         }
 
+        $toFlush = array();
         foreach ($tagsToAdd as $tag) {
+            $changes = true;
             $this->em->persist($tag);
-            $this->em->persist($this->createTagging($tag, $resource));
+            //$this->em->persist($this->createTagging($tag, $resource));
+            $tagging = $this->createTagging($tag, $resource);
+            $this->em->persist($tagging);
+            $toFlush[] = $tag;
+            $toFlush[] = $tagging;
         }
 
         if (count($tagsToAdd)) {
-            $this->em->flush();
+            $this->em->flush($toFlush);
         }
+
+        return $changes;
     }
 
     /**
@@ -259,7 +219,7 @@ class TagManager
      * @param string    $names      String of tag names
      * @param string    $separator  Tag name separator
      */
-    public function splitTagNames($names, $separator=',')
+    public function splitTagNames($names, $separator = ',')
     {
         $tags = explode($separator, $names);
         $tags = array_map('trim', $tags);
@@ -307,5 +267,55 @@ class TagManager
     protected function createTagging(Tag $tag, Taggable $resource)
     {
         return new $this->taggingClass($tag, $resource);
+    }
+
+    /**
+     * Preload tags for a set of objects.
+     * It might be usefull in case you want to
+     * display a long list of taggable objects with their associated tags: it
+     * avoids to load tags per object, and gets all tags in a few requests.
+     *
+     * @param \Iterable &$entities
+     */
+    public function preloadTags(\Iterable &$entities)
+    {
+        $searched = array();
+
+        foreach ($entities as $entity) {
+            if (!$entity instanceof Taggable) {
+                throw new \InvalidArgumentError(
+                    'Entities passed to TagManager::preloadTags() must implement DoctrineExtensions\Taggable\Taggable.'
+                );
+            }
+            $taggable_type = $entity->getTaggableType();
+            if (!isset($searched[$taggable_type])) {
+                $searched[$taggable_type] = array();
+            }
+            $searched[$taggable_type][$entity->getTaggableId()] = $entity;
+            $entity->getTags()->clear();
+        }
+
+        $qb = $this->em->createQueryBuilder()
+            ->select('tagging, tag')
+            ->from($this->taggingClass, 'tagging')
+            ->leftJoin('tagging.tag', 'tag')
+            ->orderBy('tagging.resourceId');
+
+        foreach($searched as $taggable_type => $instances)
+        {
+            $qb_clone = clone $qb;
+            $taggings = $qb_clone
+                ->where('tagging.resourceType = :type')
+                ->andWhere(
+                    $qb_clone->expr()->in('tagging.resourceId', array_keys($instances))
+                )->setParameter('type', $taggable_type)
+                ->getQuery()->getResult();
+
+            foreach($taggings as $tagging)
+            {
+                $entity = $instances[$tagging->getResourceId()];
+                $this->addTag($tagging->getTag(), $entity);
+            }
+        }
     }
 }
