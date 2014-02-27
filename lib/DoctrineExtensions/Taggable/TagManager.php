@@ -158,7 +158,7 @@ class TagManager
     public function loadTagging(Taggable $resource)
     {
         $tags = $this->getTagging($resource);
-        $this->replaceTags($tags, $resource);
+        $resource->setTags($tags);
     }
 
     /**
@@ -272,7 +272,7 @@ class TagManager
      * display a long list of taggable objects with their associated tags: it
      * avoids to load tags per object, and gets all tags in a few requests.
      *
-     * @param \Iterable &$entities
+     * @param &$entities
      */
     public function preloadTags( &$entities)
     {
