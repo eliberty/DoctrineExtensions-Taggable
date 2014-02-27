@@ -98,12 +98,11 @@ class TagManager
      *
      * @param Taggable  $resource   Taggable resource
      */
-    public function saveTagging(Taggable $resource)
+    public function saveTagging(Taggable $resource, $needFlush = true)
     {
         $oldTags = $this->getTagging($resource);
         $newTags = clone $resource->getTags();
         $tagsToAdd = $newTags;
-        $changes = false;
 
         if ($oldTags !== null and is_array($oldTags) and !empty($oldTags)) {
             $tagsToRemove = array();
@@ -119,7 +118,6 @@ class TagManager
             }
 
             if (sizeof($tagsToRemove)) {
-                $changes = true;
                 $builder = $this->em->createQueryBuilder();
                 $builder
                     ->delete($this->taggingClass, 't')
@@ -137,7 +135,6 @@ class TagManager
 
         $toFlush = array();
         foreach ($tagsToAdd as $tag) {
-            $changes = true;
             $this->em->persist($tag);
             //$this->em->persist($this->createTagging($tag, $resource));
             $tagging = $this->createTagging($tag, $resource);
@@ -146,11 +143,11 @@ class TagManager
             $toFlush[] = $tagging;
         }
 
-        if (count($tagsToAdd)) {
+        if (count($tagsToAdd) && $needFlush) {
             $this->em->flush($toFlush);
         }
 
-        return $changes;
+        return $toFlush;
     }
 
     /**
@@ -277,7 +274,7 @@ class TagManager
      *
      * @param \Iterable &$entities
      */
-    public function preloadTags(\Iterable &$entities)
+    public function preloadTags( &$entities)
     {
         $searched = array();
 
@@ -307,14 +304,14 @@ class TagManager
             $taggings = $qb_clone
                 ->where('tagging.resourceType = :type')
                 ->andWhere(
-                    $qb_clone->expr()->in('tagging.resourceId', array_keys($instances))
+                    $qb_clone->expr()->in('tagging.resourceId', array_map(function($resourceId){ return (string) $resourceId;}, (array_keys($instances))))
                 )->setParameter('type', $taggable_type)
                 ->getQuery()->getResult();
 
             foreach($taggings as $tagging)
             {
                 $entity = $instances[$tagging->getResourceId()];
-                $this->addTag($tagging->getTag(), $entity);
+                $entity->addTag($tagging->getTag());
             }
         }
     }
