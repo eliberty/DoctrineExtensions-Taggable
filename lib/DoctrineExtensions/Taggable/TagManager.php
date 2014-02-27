@@ -158,7 +158,7 @@ class TagManager
     public function loadTagging(Taggable $resource)
     {
         $tags = $this->getTagging($resource);
-        $resource->setTags($tags);
+        $resource->setTags(new ArrayCollection($tags));
     }
 
     /**
