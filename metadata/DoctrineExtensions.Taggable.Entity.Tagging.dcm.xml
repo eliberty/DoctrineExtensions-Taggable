@@ -7,7 +7,7 @@
     <entity name="DoctrineExtensions\Taggable\Entity\Tagging">
 
         <id name="id" column="id" type="integer">
-            <generator strategy="AUTO" />
+            <generator strategy="IDENTITY" />
         </id>
 
         <field name="resourceType"  column="resource_type"  type="string" length="50" />

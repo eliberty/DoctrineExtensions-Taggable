@@ -7,7 +7,7 @@
     <entity name="DoctrineExtensions\Taggable\Entity\Tag" repository-class="DoctrineExtensions\Taggable\Entity\TagRepository">
 
         <id name="id" column="id" type="integer">
-            <generator strategy="AUTO" />
+            <generator strategy="IDENTITY" />
         </id>
 
         <field name="name"          column="name"           type="string"   unique="true" />

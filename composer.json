@@ -1,5 +1,5 @@
 {
-    "name": "fpn/doctrine-extensions-taggable",
+    "name": "eliberty/fpn-doctrine-extensions-taggable",
     "description": "Tag system using Doctrine ORM",
     "keywords": ["tag", "taggable"],
     "type": "library",
